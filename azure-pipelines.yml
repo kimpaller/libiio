@@ -333,6 +333,8 @@ stages:
         sudo make install
         cd ..
       displayName: 'Build'
+      env:
+        SDKROOT=/usr/local
     - script: |
         set -e
         mkdir build_tar && cd build_tar
@@ -344,6 +346,8 @@ stages:
         ./macos_tar_fixup.sh
         cd ..
       displayName: 'Build tar'
+      env:
+        SDKROOT=/usr/local
     - script: |
         set -e
         cd build
@@ -351,6 +355,8 @@ stages:
         make
         cd ..
       displayName: 'Build With Doc'
+      env:
+        SDKROOT=/usr/local
     - task: CopyFiles@2
       inputs:
         sourceFolder: '$(Agent.BuildDirectory)/s/build/'
