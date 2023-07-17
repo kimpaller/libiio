@@ -359,6 +359,8 @@ struct iio_context * handle_common_opts(char * name, int argc,
 			}
 			timeout = sanitize_clamp("timeout", optarg, 0, INT_MAX);
 			break;
+		case 's':
+			return NULL;
 		case '?':
 			break;
 		}
