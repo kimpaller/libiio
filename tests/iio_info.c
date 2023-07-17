@@ -83,9 +83,11 @@ int main(int argc, char **argv)
 			break;
 		case 's':
 			autodetect_context(false, MY_NAME, NULL);
+			free(opts);
 			return EXIT_SUCCESS;
 		case '?':
 			printf("Unknown argument '%c'\n", c);
+			free(opts);
 			return EXIT_FAILURE;
 		}
 	}
