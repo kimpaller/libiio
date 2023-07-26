@@ -212,25 +212,14 @@ static int query_callback(int sock, const struct sockaddr *from, size_t addrlen,
 	char entrybuffer[256];
 	char namebuffer[256];
 	mdns_record_srv_t srv;
-	bool found = false;
-	mdns_string_t entrystr, fromaddrstr, addrstr;
-	unsigned short port = 0;
+	mdns_string_t entrystr, fromaddrstr;
 
 	if (!dd) {
 		IIO_ERROR("DNS SD: Missing info structure. Stop browsing.\n");
 		goto quit;
 	}
 
-	if (rtype != MDNS_RECORDTYPE_SRV && rtype != MDNS_RECORDTYPE_A &&
-	    rtype != MDNS_RECORDTYPE_AAAA)
-		goto quit;
-
-#ifdef HAVE_IPV6
-	if (rtype == MDNS_RECORDTYPE_AAAA && from->sa_family != AF_INET6)
-		goto quit;
-#endif
-
-	if (entry != MDNS_ENTRYTYPE_ANSWER)
+	if (rtype != MDNS_RECORDTYPE_SRV || entry != MDNS_ENTRYTYPE_ANSWER)
 		goto quit;
 
 	entrystr = mdns_string_extract(data, size, &name_offset,
@@ -243,125 +232,35 @@ static int query_callback(int sock, const struct sockaddr *from, size_t addrlen,
 					   from, addrlen);
 
 	iio_mutex_lock(dd->lock);
-	if (rtype == MDNS_RECORDTYPE_SRV) {
-		srv = mdns_record_parse_srv(data, size, record_offset, record_length,
-					    namebuffer, sizeof(namebuffer));
-		IIO_DEBUG("%.*s : %.*s SRV %.*s priority %d weight %d port %d\n",
-			  MDNS_STRING_FORMAT(fromaddrstr), MDNS_STRING_FORMAT(entrystr),
-			  MDNS_STRING_FORMAT(srv.name), srv.priority, srv.weight, srv.port);
 
-		/* find a match based on name/port/ipv[46] & update it, otherwise add it */
-		while (dd->next) {
-			if (dd->hostname &&
-			    !strncmp(dd->hostname, srv.name.str, srv.name.length - 1) &&
-			    (!dd->port || dd->port == srv.port) &&
-			    dd->found == (from->sa_family != AF_INET)) {
-				dd->port = srv.port;
-				IIO_DEBUG("DNS SD: updated SRV %s (%s port: %hu)\n",
-					  dd->hostname, dd->addr_str, dd->port);
-				found = true;
-			}
-			dd = dd->next;
-		}
-		if (!found) {
-			/* new hostname and port */
-			if (srv.name.length > 1) {
-				dd->hostname = iio_strndup(srv.name.str,
-							   srv.name.length - 1);
-				if (!dd->hostname)
-					goto mem_fail;
-			}
+	while (dd->next)
+		dd = dd->next;
 
-			iio_strlcpy(dd->addr_str, fromaddrstr.str, fromaddrstr.length + 1);
-			dd->port = srv.port;
-			dd->found = (from->sa_family != AF_INET);
-			IIO_DEBUG("DNS SD: added SRV %s (%s port: %hu)\n",
-				  dd->hostname, dd->addr_str, dd->port);
+	srv = mdns_record_parse_srv(data, size, record_offset, record_length,
+				    namebuffer, sizeof(namebuffer));
+	IIO_DEBUG("%.*s : %.*s SRV %.*s priority %d weight %d port %d\n",
+		  MDNS_STRING_FORMAT(fromaddrstr), MDNS_STRING_FORMAT(entrystr),
+		  MDNS_STRING_FORMAT(srv.name), srv.priority, srv.weight, srv.port);
 
-			/* A list entry was filled, prepare new item on the list */
-			dd->next = new_discovery_data(dd);
-			if (!dd->next)
-				goto mem_fail;
-		}
-	} else if (rtype == MDNS_RECORDTYPE_A) {
-		struct sockaddr_in addr;
-
-		mdns_record_parse_a(data, size, record_offset, record_length, &addr);
-		addrstr = ip_address_to_string(namebuffer, sizeof(namebuffer),
-					       (struct sockaddr *) &addr, sizeof(addr));
-		IIO_DEBUG("%.*s : %.*s A %.*s\n", MDNS_STRING_FORMAT(fromaddrstr),
-			  MDNS_STRING_FORMAT(entrystr), MDNS_STRING_FORMAT(addrstr));
-
-		/* find a match based on name/ipv4 or 6 & update it, otherwise add it */
-		while (dd->next) {
-			if (dd->hostname &&
-			    !strncmp(dd->hostname, entrystr.str, entrystr.length - 1) &&
-			    !dd->found) {
-				iio_strlcpy(dd->addr_str, addrstr.str, addrstr.length + 1);
-				IIO_DEBUG("DNS SD: updated A %s (%s port: %hu)\n",
-					  dd->hostname, dd->addr_str, dd->port);
-				found = true;
-			}
-			dd = dd->next;
-		}
-		if (!found) {
-			dd->hostname = iio_strndup(entrystr.str, entrystr.length - 1);
-			if (!dd->hostname)
-				goto mem_fail;
-			iio_strlcpy(dd->addr_str, addrstr.str, addrstr.length + 1);
-			dd->found = 0;
-			IIO_DEBUG("DNS SD: Added A %s (%s port: %hu)\n",
-				  dd->hostname, dd->addr_str, dd->port);
-			/* A list entry was filled, prepare new item on the list */
-			dd->next = new_discovery_data(dd);
-			if (!dd->next)
-				goto mem_fail;
-		}
+	/* new hostname and port */
+	if (srv.name.length > 1) {
+		dd->hostname = iio_strndup(srv.name.str,
+					   srv.name.length - 1);
+		if (!dd->hostname)
+			goto mem_fail;
 	}
-#ifdef HAVE_IPV6
-	else if (rtype == MDNS_RECORDTYPE_AAAA) {
-		struct sockaddr_in6 addr;
 
-		mdns_record_parse_aaaa(data, size, record_offset, record_length, &addr);
-		addr.sin6_scope_id = ((struct sockaddr_in6 *)from)->sin6_scope_id;
-		addrstr = ip_address_to_string(namebuffer, sizeof(namebuffer),
-					       (struct sockaddr *) &addr, sizeof(addr));
-		IIO_DEBUG("%.*s : %.*s AAAA %.*s\n", MDNS_STRING_FORMAT(fromaddrstr),
-			  MDNS_STRING_FORMAT(entrystr), MDNS_STRING_FORMAT(addrstr));
+	iio_strlcpy(dd->addr_str, fromaddrstr.str, fromaddrstr.length + 1);
+	dd->port = srv.port;
+	dd->found = (from->sa_family != AF_INET);
+	IIO_DEBUG("DNS SD: added SRV %s (%s port: %hu)\n",
+		  dd->hostname, dd->addr_str, dd->port);
 
-		/* find a match based on name/port/ipv[46] & update it, otherwise add it */
-		while (dd->next) {
-			if (dd->hostname &&
-			    !strncmp(dd->hostname, entrystr.str, entrystr.length - 1) &&
-			    dd->found) {
-				iio_strlcpy(dd->addr_str, addrstr.str, addrstr.length + 1);
-				IIO_DEBUG("DNS SD: updated AAAA %s (%s port: %hu)\n",
-					  dd->hostname, dd->addr_str, dd->port);
-				found = true;
-			}
-			else if (dd->hostname &&
-				!strncmp(dd->hostname, entrystr.str, entrystr.length - 1)) {
-				port = dd->port;
-			}
-			dd = dd->next;
-		}
-		if (!found) {
-			dd->hostname = iio_strndup(entrystr.str, entrystr.length - 1);
-			if (!dd->hostname)
-				goto mem_fail;
-			iio_strlcpy(dd->addr_str, addrstr.str, addrstr.length + 1);
-			dd->found = 1;
-			if (port)
-				dd->port = port;
-			IIO_DEBUG("DNS SD: added AAAA %s (%s port: %hu)\n",
-				  dd->hostname, dd->addr_str, dd->port);
-			/* A list entry was filled, prepare new item on the list */
-			dd->next = new_discovery_data(dd);
-			if (!dd->next)
-				goto mem_fail;
-		}
-	}
-#endif /* HAVE_IPV6 */
+	/* A list entry was filled, prepare new item on the list */
+	dd->next = new_discovery_data(dd);
+	if (!dd->next)
+		goto mem_fail;
+
 	lasttime = iio_read_counter_us();
 	iio_mutex_unlock(dd->lock);
 quit:
