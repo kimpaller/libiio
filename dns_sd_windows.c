@@ -219,7 +219,8 @@ static int query_callback(int sock, const struct sockaddr *from, size_t addrlen,
 		goto quit;
 	}
 
-	if (rtype != MDNS_RECORDTYPE_SRV || entry != MDNS_ENTRYTYPE_ANSWER)
+	if ((rtype != MDNS_RECORDTYPE_SRV && rtype != MDNS_RECORDTYPE_AAAA)
+	    || entry != MDNS_ENTRYTYPE_ANSWER)
 		goto quit;
 
 	entrystr = mdns_string_extract(data, size, &name_offset,
@@ -228,19 +229,55 @@ static int query_callback(int sock, const struct sockaddr *from, size_t addrlen,
 	if (!strstr(entrystr.str, "_iio._tcp.local"))
 		goto quit;
 
-	fromaddrstr = ip_address_to_string(addrbuffer, sizeof(addrbuffer),
-					   from, addrlen);
-
 	iio_mutex_lock(dd->lock);
+
+	if (rtype == MDNS_RECORDTYPE_SRV) {
+		srv = mdns_record_parse_srv(data, size, record_offset, record_length,
+					    namebuffer, sizeof(namebuffer));
+
+		fromaddrstr = ip_address_to_string(addrbuffer, sizeof(addrbuffer),
+						   from, addrlen);
+
+		IIO_DEBUG("%.*s : %.*s SRV %.*s priority %d weight %d port %d\n",
+			  MDNS_STRING_FORMAT(fromaddrstr), MDNS_STRING_FORMAT(entrystr),
+			  MDNS_STRING_FORMAT(srv.name), srv.priority, srv.weight, srv.port);
+	}
+#ifdef HAVE_IPV6
+	else {
+		struct sockaddr_in6 addr;
+
+		mdns_record_parse_aaaa(data, size, record_offset, record_length, &addr);
+
+		/* Find a match based on hostname */
+		for (; dd->next; dd = dd->next) {
+			if (dd->hostname
+			    && dd->found
+			    && !strncmp(dd->hostname, entrystr.str, entrystr.length - 1))
+				break;
+		}
+
+		if (!dd->next) {
+			IIO_DEBUG("No SRV found for hostname %.*s\n",
+				  MDNS_STRING_FORMAT(entrystr));
+			iio_mutex_unlock(dd->lock);
+			goto quit;
+		}
+
+		srv.name.str = dd->hostname;
+		srv.name.length = strlen(dd->hostname) + 1;
+		srv.port = dd->port;
+
+		addr.sin6_scope_id = dd->iface;
+		fromaddrstr = ip_address_to_string(addrbuffer, sizeof(addrbuffer),
+						   (struct sockaddr *)&addr, sizeof(addr));
+
+		IIO_DEBUG("Found IPv6 address %.*s for hostname %s\n",
+			  MDNS_STRING_FORMAT(fromaddrstr), dd->hostname);
+	}
+#endif
 
 	while (dd->next)
 		dd = dd->next;
-
-	srv = mdns_record_parse_srv(data, size, record_offset, record_length,
-				    namebuffer, sizeof(namebuffer));
-	IIO_DEBUG("%.*s : %.*s SRV %.*s priority %d weight %d port %d\n",
-		  MDNS_STRING_FORMAT(fromaddrstr), MDNS_STRING_FORMAT(entrystr),
-		  MDNS_STRING_FORMAT(srv.name), srv.priority, srv.weight, srv.port);
 
 	/* new hostname and port */
 	if (srv.name.length > 1) {
@@ -253,6 +290,10 @@ static int query_callback(int sock, const struct sockaddr *from, size_t addrlen,
 	iio_strlcpy(dd->addr_str, fromaddrstr.str, fromaddrstr.length + 1);
 	dd->port = srv.port;
 	dd->found = (from->sa_family != AF_INET);
+#ifdef HAVE_IPV6
+	if (dd->found)
+		dd->iface = (uint16_t)((struct sockaddr_in6 *)from)->sin6_scope_id;
+#endif
 	IIO_DEBUG("DNS SD: added SRV %s (%s port: %hu)\n",
 		  dd->hostname, dd->addr_str, dd->port);
 
