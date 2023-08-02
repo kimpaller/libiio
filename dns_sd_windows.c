@@ -267,7 +267,11 @@ static int query_callback(int sock, const struct sockaddr *from, size_t addrlen,
 		srv.name.length = strlen(dd->hostname) + 1;
 		srv.port = dd->port;
 
-		addr.sin6_scope_id = dd->iface;
+		if (IN6_IS_ADDR_LINKLOCAL(&addr.sin6_addr))
+			addr.sin6_scope_id = dd->iface;
+		else
+			addr.sin6_scope_id = 0;
+
 		fromaddrstr = ip_address_to_string(addrbuffer, sizeof(addrbuffer),
 						   (struct sockaddr *)&addr, sizeof(addr));
 
