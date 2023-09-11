@@ -555,7 +555,7 @@ static ssize_t iiod_client_read_attr_new(struct iiod_client *client,
 		cmd.op = IIOD_OP_READ_ATTR;
 
 		for (i = 0; i < iio_device_get_attrs_count(dev); i++)
-			if (!strcmp(iio_device_get_attr(dev, i), attr->name))
+			if (iio_device_get_attr(dev, i) == attr)
 				break;
 
 		if (i == iio_device_get_attrs_count(dev))
@@ -568,7 +568,7 @@ static ssize_t iiod_client_read_attr_new(struct iiod_client *client,
 		cmd.op = IIOD_OP_READ_DBG_ATTR;
 
 		for (i = 0; i < iio_device_get_debug_attrs_count(dev); i++)
-			if (!strcmp(iio_device_get_debug_attr(dev, i), attr->name))
+			if (iio_device_get_debug_attr(dev, i) == attr)
 				break;
 
 		if (i == iio_device_get_debug_attrs_count(dev))
@@ -732,7 +732,7 @@ static ssize_t iiod_client_write_attr_new(struct iiod_client *client,
 		cmd.op = IIOD_OP_WRITE_ATTR;
 
 		for (i = 0; i < iio_device_get_attrs_count(dev); i++)
-			if (!strcmp(iio_device_get_attr(dev, i), attr->name))
+			if (iio_device_get_attr(dev, i) == attr)
 				break;
 
 		if (i == iio_device_get_attrs_count(dev))
@@ -745,7 +745,7 @@ static ssize_t iiod_client_write_attr_new(struct iiod_client *client,
 		cmd.op = IIOD_OP_WRITE_DBG_ATTR;
 
 		for (i = 0; i < iio_device_get_debug_attrs_count(dev); i++)
-			if (!strcmp(iio_device_get_debug_attr(dev, i), attr->name))
+			if (iio_device_get_debug_attr(dev, i) == attr)
 				break;
 
 		if (i == iio_device_get_debug_attrs_count(dev))
